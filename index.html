@@ -23,13 +23,19 @@ button.main{background:#f0a94d}
 button:focus-visible{outline:3px solid #fff;outline-offset:3px}
 .tip{position:fixed;top:calc(env(safe-area-inset-top,0px) + 12px);left:0;right:0;text-align:center;color:#f3e8d2;font-size:14px;pointer-events:none;text-shadow:0 1px 6px #000}
 .now{position:fixed;top:calc(env(safe-area-inset-top,0px) + 38px);left:0;right:0;text-align:center;color:#ffd9a0;font-size:15px;pointer-events:none;text-shadow:0 1px 6px #000}
+#joy{position:fixed;left:calc(env(safe-area-inset-left,0px) + 18px);bottom:calc(env(safe-area-inset-bottom,0px) + 22px);width:120px;height:120px;border-radius:50%;background:rgba(255,243,220,.14);border:2px solid rgba(255,243,220,.45);backdrop-filter:blur(3px);touch-action:none;z-index:3;display:flex;align-items:center;justify-content:center;user-select:none;-webkit-user-select:none}
+#joy::before{content:"";position:absolute;inset:8px;border-radius:50%;border:1px dashed rgba(255,243,220,.3)}
+#joyk{width:52px;height:52px;border-radius:50%;background:#f0a94d;box-shadow:0 3px 12px #0008;pointer-events:none}
+.sit{left:auto;right:16px;transform:none;animation:pu2 1.8s ease-in-out infinite}
+@keyframes pu2{50%{transform:scale(1.07)}}
 </style>
 </head>
 <body>
 <div id="gm" hidden><div class="card"><img id="gimg" alt=""><p id="gmsg"></p><button class="main" id="gx">إغلاق</button></div></div>
 <button class="main sit" id="gbtn" hidden>🎁 افتح الهدية</button>
-<div class="vig"></div><div class="tip">اسحب باش تدور · قرص أو عجلة باش تقرب · قرب من الكرسي باش تقعد وتعزف</div>
+<div class="vig"></div><div class="tip">استعمل العجلة (تحت على اليسار) باش تمشي · اسحب باش تدور · قرب من الكرسي باش تقعد وتعزف</div>
 <div class="now" id="now"></div>
+<div id="joy" aria-label="عجلة المشي"><div id="joyk"></div></div>
 <button class="main sit" id="sit" hidden>🪑 اقعد</button>
 <div class="bar" id="pbar" hidden>
   <button class="main" id="play">▶ شغّل المعزوفة</button>
@@ -344,12 +350,37 @@ document.querySelectorAll('.spd').forEach(b=>b.onclick=()=>{const nr=parseFloat(
 
 
 addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});
+// ---------- المشي بالعجلة (جويستيك)
+const WALK={x:0,y:0},kd={},SPEED=1.8,jb=$('joy'),jk=$('joyk');let jid=null;const JR=34;
+function joySet(e){const r=jb.getBoundingClientRect();let dx=e.clientX-(r.left+r.width/2),dy=e.clientY-(r.top+r.height/2);const l=Math.hypot(dx,dy);if(l>JR){dx*=JR/l;dy*=JR/l}jk.style.transform=`translate(${dx}px,${dy}px)`;WALK.x=dx/JR;WALK.y=dy/JR}
+jb.addEventListener('pointerdown',e=>{jid=e.pointerId;try{jb.setPointerCapture(e.pointerId)}catch(_){}joySet(e);e.preventDefault()});
+jb.addEventListener('pointermove',e=>{if(e.pointerId===jid)joySet(e)});
+const joyEnd=e=>{if(e.pointerId!==jid)return;jid=null;WALK.x=WALK.y=0;jk.style.transform=''};
+jb.addEventListener('pointerup',joyEnd);jb.addEventListener('pointercancel',joyEnd);
+addEventListener('keydown',e=>{if(e.key.startsWith('Arrow')){kd[e.key]=1;e.preventDefault()}});
+addEventListener('keyup',e=>{if(e.key.startsWith('Arrow'))kd[e.key]=0});
+const OBST=[[-2.5,.4,.62],[1.6,.7,.4],[2.15,.4,.3],[2.6,.85,.45],[-2.4,-1.2,.3]];
+const _d=new T.Vector3();
+function walkTick(dt){
+  jb.hidden=seated;
+  if(seated||tween||!$('gm').hidden)return;
+  let f=-WALK.y+(kd.ArrowUp?1:0)-(kd.ArrowDown?1:0),s=WALK.x+(kd.ArrowRight?1:0)-(kd.ArrowLeft?1:0);
+  const m=Math.hypot(f,s);if(m<.08)return;if(m>1){f/=m;s/=m}
+  camera.getWorldDirection(_d);_d.y=0;if(_d.lengthSq()<1e-4)_d.set(0,0,-1);_d.normalize();
+  let px=camera.position.x+(_d.x*f-_d.z*s)*SPEED*dt,pz=camera.position.z+(_d.z*f+_d.x*s)*SPEED*dt;
+  px=Math.max(-4.5,Math.min(4.5,px));pz=Math.max(-1.15,Math.min(4.6,pz));
+  OBST.forEach(([ox,oz,r])=>{const dx=px-ox,dz=pz-oz,l=Math.hypot(dx,dz);if(l<r){const k=l>1e-4?r/l:1;px=ox+(l>1e-4?dx*k:r);pz=oz+(l>1e-4?dz*k:0)}});
+  if(px>-.85&&px<.85&&pz>-1.2&&pz<.35){const e=[px+.85,.85-px,pz+1.2,.35-pz],i=e.indexOf(Math.min(...e));if(i==0)px=-.85;else if(i==1)px=.85;else if(i==2)pz=-1.2;else pz=.35}
+  const ddx=px-camera.position.x,ddz=pz-camera.position.z;
+  camera.position.x+=ddx;camera.position.z+=ddz;controls.target.x+=ddx;controls.target.z+=ddz;
+}
+
 const clock=new T.Clock();
 renderer.setAnimationLoop(()=>{
   const dt=clock.getDelta();
   if(tween){tween.t=Math.min(1,tween.t+dt/1.3);const e=tween.t<.5?4*tween.t**3:1-Math.pow(-2*tween.t+2,3)/2;
     camera.position.lerpVectors(tween.p0,tween.p1,e);controls.target.lerpVectors(tween.g0,tween.g1,e);if(tween.t>=1)tween=null}
-  proximity();uiTick();updateSong();drawTV();partyTick(dt);giftTick(dt);controls.update();renderer.render(scene,camera);
+  walkTick(dt);proximity();uiTick();updateSong();drawTV();partyTick(dt);giftTick(dt);controls.update();renderer.render(scene,camera);
 });
 </script>
 </body>
